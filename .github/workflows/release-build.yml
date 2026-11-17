@@ -1,0 +1,35 @@
+name: Release Build
+
+on:
+  push:
+
+
+jobs:
+  build-release:
+    # ubuntu-latest is moving to Ubuntu 26 from October 19, 2026.
+    # Pinning 24.04 keeps the build environment predictable.
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build APK
+        run: ./gradlew assembleDebug --warning-mode all --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 3

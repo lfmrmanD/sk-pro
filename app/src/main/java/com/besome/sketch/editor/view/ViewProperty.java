@@ -1,0 +1,581 @@
+package com.besome.sketch.editor.view;
+
+import android.animation.ObjectAnimator;
+import android.content.Context;
+import android.graphics.PorterDuff;
+import android.text.InputType;
+import android.util.AttributeSet;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
+import android.view.inputmethod.EditorInfo;
+import android.widget.AdapterView;
+import android.widget.BaseAdapter;
+import android.widget.EditText;
+import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.Spinner;
+import android.widget.TextView;
+
+import com.besome.sketch.beans.ProjectFileBean;
+import com.besome.sketch.beans.ViewBean;
+import com.besome.sketch.ctrls.ViewIdSpinnerItem;
+import com.besome.sketch.editor.property.ViewPropertyItems;
+import com.besome.sketch.lib.ui.CustomHorizontalScrollView;
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.color.MaterialColors;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+
+import java.util.ArrayList;
+
+import a.a.a.Iw;
+import a.a.a.Jw;
+import a.a.a.Kw;
+import a.a.a.Lw;
+import a.a.a.NB;
+import a.a.a.Op;
+import a.a.a.Qs;
+import a.a.a.Rp;
+import a.a.a.bB;
+import a.a.a.jC;
+import a.a.a.mB;
+import a.a.a.wB;
+import mod.hey.studios.project.ProjectSettings;
+import mod.hey.studios.util.Helper;
+import pro.sketchware.R;
+import pro.sketchware.databinding.PropertyGridItemBinding;
+import pro.sketchware.databinding.PropertyGroupItemBinding;
+import pro.sketchware.databinding.PropertyPopupSaveToFavoriteBinding;
+import pro.sketchware.databinding.ViewPropertyBinding;
+
+public class ViewProperty extends LinearLayout implements Kw {
+
+    public ViewPropertyBinding binding;
+    private Context context;
+    private final ArrayList<ViewBean> projectActivityViews = new ArrayList<>();
+    private String sc_id;
+    private ProjectFileBean projectFile;
+    private Spinner spnWidget;
+    private ViewIdsAdapter idsAdapter;
+    private Jw propertyTargetChangeListener = null;
+    private LinearLayout layoutPropertySeeAll;
+    private ViewPropertyItems viewPropertyItems;
+    private SeeAllPropertiesFloatingItem seeAll;
+    private View propertyLayout;
+    private ViewEvents viewEvent;
+    private Iw propertyListener = null;
+    private Lw propertyValueChangedListener;
+    private onPropertyDeleted onPropertyDeletedListener;
+    private LinearLayout layoutPropertyGroup;
+    private int selectedGroupId;
+    private ImageView imgSave;
+    private ImageView imgDelete;
+    private ObjectAnimator showAllShower;
+    private ObjectAnimator showAllHider;
+    private boolean showAllVisible = true;
+
+    public ViewProperty(Context context) {
+        super(context);
+        initialize(context);
+    }
+
+    public ViewProperty(Context context, AttributeSet attributeSet) {
+        super(context, attributeSet);
+        initialize(context);
+    }
+
+    @Override
+    public void a(String str, Object obj) {
+    }
+
+    public interface onPropertyDeleted {
+        void deleteProperty(ViewBean viewBean);
+    }
+
+    public interface onPropertyMoved {
+        void moveProperty(ViewBean viewBean, boolean up);
+    }
+
+    private onPropertyMoved onPropertyMovedListener;
+
+    public void setOnPropertyMoved(onPropertyMoved onPropertyMoved) {
+        onPropertyMovedListener = onPropertyMoved;
+    }
+
+    public void setOnPropertyDeleted(onPropertyDeleted onPropertyDeleted) {
+        onPropertyDeletedListener = onPropertyDeleted;
+    }
+
+    public void setOnEventClickListener(Qs onEventClickListener) {
+        viewEvent.setOnEventClickListener(onEventClickListener);
+    }
+
+    public void setOnPropertyListener(Iw onPropertyListener) {
+        propertyListener = onPropertyListener;
+    }
+
+    public void setOnPropertyTargetChangeListener(Jw onPropertyTargetChangeListener) {
+        propertyTargetChangeListener = onPropertyTargetChangeListener;
+    }
+
+    public void setOnPropertyValueChangedListener(Lw onPropertyValueChangedListener) {
+        propertyValueChangedListener = onPropertyValueChangedListener;
+        viewPropertyItems.setOnPropertyValueChangedListener(viewBean -> {
+            if (propertyValueChangedListener != null) {
+                propertyValueChangedListener.a(viewBean);
+            }
+        });
+    }
+
+    private void cancelSeeAllAnimations() {
+        if (showAllShower.isRunning()) {
+            showAllShower.cancel();
+        }
+        if (showAllHider.isRunning()) {
+            showAllHider.cancel();
+        }
+    }
+
+    private void initializeSeeAllAnimations() {
+        if (showAllShower == null) {
+            showAllShower = ObjectAnimator.ofFloat(layoutPropertySeeAll, View.TRANSLATION_Y, 0.0f);
+            showAllShower.setDuration(400L);
+            showAllShower.setInterpolator(new DecelerateInterpolator());
+        }
+        if (showAllHider == null) {
+            showAllHider = ObjectAnimator.ofFloat(layoutPropertySeeAll, View.TRANSLATION_Y, wB.a(getContext(), 100.0f));
+            showAllHider.setDuration(200L);
+            showAllHider.setInterpolator(new DecelerateInterpolator());
+        }
+    }
+
+    public void d() {
+        if (viewPropertyItems != null) {
+            viewPropertyItems.save();
+        }
+    }
+
+    public void e() {
+        for (int i = 0; i < layoutPropertyGroup.getChildCount(); i++) {
+            GroupItem item = (GroupItem) layoutPropertyGroup.getChildAt(i);
+
+            if (selectedGroupId == (Integer) item.getTag()) {
+                item.setSelected(true);
+                item.animate().scaleX(0.9f).scaleY(0.9f).start();
+            } else {
+                item.setSelected(false);
+                item.animate().scaleX(0.8f).scaleY(0.8f).start();
+            }
+        }
+        if (idsAdapter.getSelectedItemPosition() < projectActivityViews.size()) {
+            ViewBean viewBean = projectActivityViews.get(idsAdapter.getSelectedItemPosition());
+            if (selectedGroupId == 0) {
+                propertyLayout.setVisibility(VISIBLE);
+                layoutPropertySeeAll.setVisibility(VISIBLE);
+                viewPropertyItems.setProjectFileBean(projectFile);
+                viewPropertyItems.a(sc_id, viewBean);
+                a(viewBean);
+                viewEvent.setVisibility(GONE);
+            } else if (selectedGroupId == 1) {
+                propertyLayout.setVisibility(VISIBLE);
+                viewPropertyItems.setupAllPropertiesFromConfig(viewBean);
+                layoutPropertySeeAll.setVisibility(GONE);
+            } else if (selectedGroupId == 2) {
+                propertyLayout.setVisibility(GONE);
+                viewEvent.setVisibility(VISIBLE);
+                viewEvent.setData(sc_id, projectFile, viewBean);
+            }
+        }
+    }
+
+    private void showSaveToCollectionDialog() {
+        MaterialAlertDialogBuilder dialog = new MaterialAlertDialogBuilder(getContext());
+        dialog.setTitle(R.string.view_widget_favorites_save_title);
+        dialog.setIcon(R.drawable.ic_bookmark_red_48dp);
+        PropertyPopupSaveToFavoriteBinding dialogBinding = PropertyPopupSaveToFavoriteBinding.inflate(LayoutInflater.from(getContext()));
+        dialogBinding.tvFavoritesGuide.setText(Helper.getResString(R.string.view_widget_favorites_save_guide_new));
+        EditText editText = dialogBinding.edInput;
+        editText.setPrivateImeOptions("defaultInputmode=english;");
+        editText.setLines(1);
+        editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        editText.setImeOptions(EditorInfo.IME_ACTION_DONE);
+
+        NB validator = new NB(getContext(), dialogBinding.tiInput, Rp.h().g());
+        dialog.setView(dialogBinding.getRoot());
+        dialog.setPositiveButton(R.string.common_word_save, (v, which) -> {
+            if (!mB.a() && validator.b()) {
+                String widgetName = Helper.getText(editText);
+                ArrayList<ViewBean> viewBeans = jC.a(sc_id).b(projectFile.getXmlName(), projectActivityViews.get(idsAdapter.getSelectedItemPosition()));
+                for (ViewBean viewBean : viewBeans) {
+                    String backgroundResource = viewBean.layout.backgroundResource;
+                    String resName = viewBean.image.resName;
+                    if (backgroundResource != null && !backgroundResource.equals("NONE") && jC.d(sc_id).l(backgroundResource) && !Op.g().b(backgroundResource)) {
+                        try {
+                            Op.g().a(sc_id, jC.d(sc_id).g(backgroundResource));
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                            bB.b(getContext(), e.getMessage(), bB.TOAST_NORMAL).show();
+                        }
+                    }
+                    if (resName != null && !resName.equals("default_image") && !resName.equals("NONE") && jC.d(sc_id).l(resName) && !Op.g().b(resName)) {
+                        try {
+                            Op.g().a(sc_id, jC.d(sc_id).g(resName));
+                        } catch (Exception e) {
+                            bB.b(getContext(), e.getMessage(), bB.TOAST_NORMAL).show();
+                        }
+                    }
+                }
+                Rp.h().a(widgetName, viewBeans, true);
+                if (propertyListener != null) {
+                    propertyListener.a();
+                }
+                bB.a(getContext(), Helper.getResString(R.string.common_message_complete_save), bB.TOAST_NORMAL).show();
+                v.dismiss();
+            }
+        });
+        dialog.setNegativeButton(R.string.common_word_cancel, null);
+        dialog.show();
+    }
+
+    private void showDeleteViewBeanWidget() {
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.view_widget_delete_title)
+                .setMessage(R.string.view_widget_delete_description)
+                .setPositiveButton(R.string.common_word_delete, (d, w) -> {
+                    if (onPropertyDeletedListener != null) {
+                        onPropertyDeletedListener.deleteProperty(projectActivityViews.get(idsAdapter.getSelectedItemPosition()));
+                    }
+                })
+                .setNegativeButton(R.string.common_word_cancel, (d, w) -> d.dismiss())
+                .show();
+    }
+
+    private void initialize(Context context) {
+        this.context = context;
+        binding = ViewPropertyBinding.inflate(LayoutInflater.from(context), this, true);
+        layoutPropertyGroup = binding.layoutPropertyGroup;
+        CustomHorizontalScrollView hcvProperty = binding.hcvProperty;
+        propertyLayout = binding.propertyLayout;
+        LinearLayout propertyContents = binding.propertyContents;
+        layoutPropertySeeAll = binding.layoutPropertySeeAll;
+        viewEvent = binding.viewEvent;
+        hcvProperty.setHorizontalScrollBarEnabled(false);
+        hcvProperty.setOnScrollChangedListener((scrollX, scrollY, oldScrollX, oldScrollY) -> {
+            if (Math.abs(scrollX - oldScrollY) <= 5) {
+                return;
+            }
+            int maxScrollX = hcvProperty.getChildAt(0).getWidth() - hcvProperty.getWidth();
+            if (scrollX > 100 && scrollX < maxScrollX) {
+                if (scrollX > oldScrollX) {
+                    if (showAllVisible) {
+                        showAllVisible = false;
+                        cancelSeeAllAnimations();
+                        showAllHider.start();
+                    }
+                } else {
+                    if (!showAllVisible) {
+                        showAllVisible = true;
+                        cancelSeeAllAnimations();
+                        showAllShower.start();
+                    }
+                }
+            } else if (scrollX >= maxScrollX) {
+                if (showAllVisible) {
+                    showAllVisible = false;
+                    cancelSeeAllAnimations();
+                    showAllHider.start();
+                }
+            } else {
+                if (!showAllVisible) {
+                    showAllVisible = true;
+                    cancelSeeAllAnimations();
+                    showAllShower.start();
+                }
+            }
+        });
+        imgSave = binding.imgSave;
+        imgSave.setOnClickListener(v -> {
+            if (!mB.a()) {
+                showSaveToCollectionDialog();
+            }
+        });
+        imgDelete = binding.imgDelete;
+        imgDelete.setOnClickListener(view -> showDeleteViewBeanWidget());
+        ImageButton imgUp = binding.imgUp;
+        imgUp.setOnClickListener(view -> {
+            if (onPropertyMovedListener != null && idsAdapter.getSelectedItemPosition() < projectActivityViews.size()) {
+                onPropertyMovedListener.moveProperty(projectActivityViews.get(idsAdapter.getSelectedItemPosition()), true);
+            }
+        });
+        ImageButton imgDown = binding.imgDown;
+        imgDown.setOnClickListener(view -> {
+            if (onPropertyMovedListener != null && idsAdapter.getSelectedItemPosition() < projectActivityViews.size()) {
+                onPropertyMovedListener.moveProperty(projectActivityViews.get(idsAdapter.getSelectedItemPosition()), false);
+            }
+        });
+        spnWidget = binding.spnWidget;
+        idsAdapter = new ViewIdsAdapter(context, projectActivityViews);
+        spnWidget.setAdapter(idsAdapter);
+        spnWidget.setSelection(0);
+        spnWidget.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                idsAdapter.setPosition(position);
+                selectView(projectActivityViews.get(position));
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        initializeGroups();
+        initializeSeeAllAnimations();
+        viewPropertyItems = new ViewPropertyItems(getContext());
+        viewPropertyItems.setOrientation(HORIZONTAL);
+        propertyContents.addView(viewPropertyItems);
+    }
+
+    private void selectView(ViewBean viewBean) {
+        if (propertyTargetChangeListener != null) {
+            propertyTargetChangeListener.a(viewBean.id);
+        }
+        ImageButton imgUp = binding.imgUp;
+        ImageButton imgDown = binding.imgDown;
+        if ("_fab".equals(viewBean.id)) {
+            imgSave.setVisibility(GONE);
+            imgDelete.setVisibility(GONE);
+            imgUp.setVisibility(GONE);
+            imgDown.setVisibility(GONE);
+        } else {
+            imgSave.setVisibility(VISIBLE);
+            imgDelete.setVisibility(VISIBLE);
+            imgUp.setVisibility(VISIBLE);
+            imgDown.setVisibility(VISIBLE);
+            updateMoveButtonsState(viewBean);
+        }
+        viewPropertyItems.setProjectFileBean(projectFile);
+        e();
+    }
+
+    private void updateMoveButtonsState(ViewBean viewBean) {
+        ImageButton imgUp = binding.imgUp;
+        ImageButton imgDown = binding.imgDown;
+        if (viewBean == null || viewBean.parent == null) {
+            setMoveButtonEnabled(imgUp, false);
+            setMoveButtonEnabled(imgDown, false);
+            return;
+        }
+
+        ArrayList<ViewBean> siblings = new ArrayList<>();
+        for (ViewBean child : projectActivityViews) {
+            if (child.parent != null && child.parent.equals(viewBean.parent)) {
+                siblings.add(child);
+            }
+        }
+        siblings.sort((a, b) -> Integer.compare(a.index, b.index));
+
+        int myPos = -1;
+        for (int i = 0; i < siblings.size(); i++) {
+            if (siblings.get(i).id.equals(viewBean.id)) {
+                myPos = i;
+                break;
+            }
+        }
+
+        boolean canMoveUp = myPos > 0;
+        boolean canMoveDown = myPos >= 0 && myPos < siblings.size() - 1;
+
+        setMoveButtonEnabled(imgUp, canMoveUp);
+        setMoveButtonEnabled(imgDown, canMoveDown);
+    }
+
+    private void setMoveButtonEnabled(ImageButton button, boolean enabled) {
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1.0f : 0.38f);
+    }
+
+    public void a(String sc_id, ProjectFileBean projectFileBean) {
+        this.sc_id = sc_id;
+        projectFile = projectFileBean;
+        viewPropertyItems.setProjectSettings(new ProjectSettings(sc_id));
+    }
+
+    public void a(String str) {
+        for (int i = 0; i < projectActivityViews.size(); i++) {
+            if (projectActivityViews.get(i).id.equals(str)) {
+                if (spnWidget.getSelectedItemPosition() == i) {
+                    selectView(projectActivityViews.get(i));
+                } else {
+                    spnWidget.setSelection(i);
+                }
+                return;
+            }
+        }
+    }
+
+    public void addActivityViews(ArrayList<ViewBean> activityViews, ViewBean fab) {
+        projectActivityViews.clear();
+        projectActivityViews.addAll(activityViews);
+        if (fab != null) {
+            projectActivityViews.add(0, fab);
+        }
+        idsAdapter.notifyDataSetChanged();
+    }
+
+    private void initializeGroups() {
+        addGroup(0, R.string.property_group_basic);
+        addGroup(1, R.string.property_group_recent);
+        addGroup(2, R.string.property_group_event);
+    }
+
+    private void addGroup(int id, int labelResId) {
+        GroupItem group = new GroupItem(getContext());
+        group.configure(id, labelResId);
+        group.setTag(id);
+        layoutPropertyGroup.addView(group);
+    }
+
+    private void a(ViewBean viewBean) {
+        if (seeAll == null) {
+            seeAll = new SeeAllPropertiesFloatingItem(getContext());
+            seeAll.configure(R.drawable.color_more_96, R.string.common_word_see_all);
+            seeAll.setView(viewBean);
+            layoutPropertySeeAll.addView(seeAll);
+            return;
+        }
+        seeAll.setView(viewBean);
+    }
+
+    private static class ViewIdsAdapter extends BaseAdapter {
+
+        private final Context context;
+        private final ArrayList<ViewBean> views;
+        private int selectedItemPosition;
+
+        public ViewIdsAdapter(Context context, ArrayList<ViewBean> arrayList) {
+            this.context = context;
+            views = arrayList;
+        }
+
+        private void setPosition(int position) {
+            selectedItemPosition = position;
+        }
+
+        @Override
+        public int getCount() {
+            if (views == null) {
+                return 0;
+            } else {
+                return views.size();
+            }
+        }
+
+        @Override
+        public View getDropDownView(int position, View convertView, ViewGroup parent) {
+            return getSpinnerItem(position, convertView, selectedItemPosition == position, true);
+        }
+
+        @Override
+        public ViewBean getItem(int position) {
+            return views.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            return getSpinnerItem(position, convertView, false, false);
+        }
+
+        private int getSelectedItemPosition() {
+            return selectedItemPosition;
+        }
+
+        private ViewIdSpinnerItem getSpinnerItem(int position, View convertView, boolean isSelected, boolean isDropDownView) {
+            ViewIdSpinnerItem item;
+            if (convertView != null) {
+                item = (ViewIdSpinnerItem) convertView;
+            } else {
+                item = new ViewIdSpinnerItem(context);
+                item.setTextSize(R.dimen.text_size_body_small);
+            }
+            item.setDropDown(isDropDownView);
+
+            ViewBean view = views.get(position);
+            item.a(ViewBean.getViewTypeResId(view.type), view.id, isSelected);
+            return item;
+        }
+    }
+
+    private class GroupItem extends LinearLayout implements View.OnClickListener {
+
+        public PropertyGroupItemBinding binding;
+        private TextView title;
+
+        public GroupItem(Context context) {
+            super(context);
+            initialize(context);
+        }
+
+        private void initialize(Context context) {
+            binding = PropertyGroupItemBinding.inflate(LayoutInflater.from(context), this, true);
+            title = binding.tvTitle;
+        }
+
+        @Override
+        public void onClick(View view) {
+            selectedGroupId = (Integer) view.getTag();
+            e();
+        }
+
+        private void configure(int id, int labelResId) {
+            setTag(id);
+            title.setText(Helper.getResString(labelResId));
+            setOnClickListener(this);
+        }
+    }
+
+    private class SeeAllPropertiesFloatingItem extends LinearLayout implements View.OnClickListener {
+
+        public PropertyGridItemBinding binding;
+        private final MaterialCardView propertyMenuItem;
+        private final ImageView icon;
+        private final TextView title;
+        private ViewBean viewBean;
+
+        public SeeAllPropertiesFloatingItem(Context context) {
+            super(context);
+
+            binding = PropertyGridItemBinding.inflate(LayoutInflater.from(context), this, true);
+            propertyMenuItem = binding.propertyMenuItem;
+            icon = binding.imgIcon;
+            title = binding.tvTitle;
+        }
+
+        @Override
+        public void onClick(View v) {
+            if (propertyListener != null) {
+                propertyListener.a(projectFile.getXmlName(), viewBean);
+            }
+        }
+
+        private void configure(int imageResId, int propertyNameResId) {
+            propertyMenuItem.setVisibility(VISIBLE);
+            propertyMenuItem.setCardBackgroundColor(MaterialColors.getColor(this, R.attr.colorPrimaryContainer));
+            propertyMenuItem.setOnClickListener(this);
+            icon.setImageResource(imageResId);
+            icon.setColorFilter(MaterialColors.getColor(this, R.attr.colorOnPrimaryContainer), PorterDuff.Mode.SRC_ATOP);
+            title.setText(Helper.getResString(propertyNameResId));
+            title.setTextColor(MaterialColors.getColor(this, R.attr.colorOnPrimaryContainer));
+        }
+
+        private void setView(ViewBean viewBean) {
+            this.viewBean = viewBean;
+        }
+    }
+}
