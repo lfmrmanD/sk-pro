@@ -23,6 +23,7 @@ import com.google.android.material.textfield.TextInputLayout;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -315,7 +316,7 @@ public class AddSoundActivity extends BaseDialogActivity implements View.OnClick
             binding.layoutGuide.setVisibility(View.GONE);
             if (binding.edInput.getText() == null || binding.edInput.getText().length() <= 0) {
                 String extractedName = FileUtil.getFileNameNoExtension(getFilenameOfPickedFile(soundUri));
-                extractedName = extractedName.replaceAll("[^a-z0-9_]", "_");
+                extractedName = extractedName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_");
                 binding.edInput.setText(extractedName);
             }
         } catch (Exception e) {
