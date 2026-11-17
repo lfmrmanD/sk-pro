@@ -244,7 +244,9 @@ public class AddImageActivity extends BaseDialogActivity implements View.OnClick
         }
         
         if (binding.edInput != null && (binding.edInput.getText() == null || binding.edInput.getText().length() <= 0)) {
-            binding.edInput.setText(path.substring(path.lastIndexOf("/") + 1, indexOfFilenameExtension));
+            String extractedName = path.substring(path.lastIndexOf("/") + 1, indexOfFilenameExtension);
+            extractedName = extractedName.replaceAll("[^a-z0-9_]", "_");
+            binding.edInput.setText(extractedName);
         }
         
         try {
