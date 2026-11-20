@@ -1,11 +1,7 @@
 package com.besome.sketch.lib.ui;
 
 import android.content.Context;
-
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-
 import a.a.a.DB;
 import a.a.a.wq;
 import pro.sketchware.utility.FileUtil;
@@ -32,47 +28,63 @@ import pro.sketchware.utility.GsonUtils;
  */
 final class LegacyCustomColorsMigrator {
 
-    private static final String LEGACY_PREF_NAME = "P24";
-    private static final String LEGACY_COLORS_KEY = "P24I1";
-    private static final String LEGACY_ATTRS_KEY = "P24I2";
+    private static final String PREF_NAME = "P24";
+    private static final String KEY_COLORS = "P24I1";
+    private static final String KEY_ATTRS = "P24I2";
 
-    private LegacyCustomColorsMigrator() {
-        // no instances
-    }
+    private LegacyCustomColorsMigrator() {}
 
     static void migrateIfNeeded(Context context) {
-        // Already migrated (or user simply has no legacy data) -> nothing to do.
-        if (FileUtil.isExistFile(wq.getCustomColors())) {
+        DB pref = new DB(context, PREF_NAME);
+
+        String rawColors = pref.f(KEY_COLORS);
+        String rawAttrs = pref.f(KEY_ATTRS);
+
+        // Nothing to migrate
+        if ((rawColors == null || rawColors.isEmpty()) && (rawAttrs == null || rawAttrs.isEmpty())) {
             return;
         }
 
-        DB legacyPref = new DB(context, LEGACY_PREF_NAME);
+        Data data = readExistingFile();
 
-        ArrayList<String> colors = splitCommaSeparated(legacyPref.f(LEGACY_COLORS_KEY));
-        ArrayList<String> attrs = splitCommaSeparated(legacyPref.f(LEGACY_ATTRS_KEY));
-
-        if (colors.isEmpty() && attrs.isEmpty()) {
-            return;
-        }
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("colors", colors);
-        data.put("attrs", attrs);
+        merge(rawColors, data.colors);
+        merge(rawAttrs, data.attrs);
 
         FileUtil.writeFile(wq.getCustomColors(), GsonUtils.getGson().toJson(data));
+
+        // Remove keys after successful write
+        pref.a(KEY_COLORS);
+        pref.a(KEY_ATTRS);
     }
 
-    private static ArrayList<String> splitCommaSeparated(String raw) {
-        ArrayList<String> result = new ArrayList<>();
-        if (raw == null || raw.isEmpty()) {
-            return result;
-        }
-        for (String piece : raw.split(",")) {
-            String trimmed = piece.trim();
-            if (!trimmed.isEmpty()) {
-                result.add(trimmed);
+    private static void merge(String raw, ArrayList<String> target) {
+        if (raw == null || raw.isEmpty()) return;
+        for (String item : raw.split(",")) {
+            String val = item.trim();
+            if (!val.isEmpty() && !target.contains(val)) {
+                target.add(val);
             }
         }
-        return result;
+    }
+
+    private static Data readExistingFile() {
+        Data data = new Data();
+        try {
+            if (FileUtil.isExistFile(wq.getCustomColors())) {
+                Data existing = GsonUtils.getGson().fromJson(
+                        FileUtil.readFile(wq.getCustomColors()), Data.class);
+                if (existing != null) {
+                    if (existing.colors != null) data.colors = existing.colors;
+                    if (existing.attrs != null) data.attrs = existing.attrs;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return data;
+    }
+
+    private static class Data {
+        ArrayList<String> colors = new ArrayList<>();
+        ArrayList<String> attrs = new ArrayList<>();
     }
 }
