@@ -287,7 +287,7 @@ public class LocalLibrariesUtil {
             }
         }
 
-        String base = libDir.getAbsolutePath();
+        String base = libDir.toAbsolutePath().toString();
         if (entries.contains("config")) {
             localLibrary.put("packageName", readFile(base + "/config"));
         }

@@ -211,7 +211,7 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         super.onDestroy();
         ioExecutor.shutdownNow();
     }
