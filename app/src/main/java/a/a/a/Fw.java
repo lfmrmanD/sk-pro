@@ -240,6 +240,16 @@ public class Fw extends qA {
     }
 
     @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (activitiesList != null) {
+            activitiesList.setAdapter(null);
+        }
+        activitiesList = null;
+        tvGuide = null;
+    }
+
+    @Override
     public void onSaveInstanceState(Bundle newState) {
         newState.putString("sc_id", sc_id);
         newState.putString("compatUseYn", isAppCompatUsed);
