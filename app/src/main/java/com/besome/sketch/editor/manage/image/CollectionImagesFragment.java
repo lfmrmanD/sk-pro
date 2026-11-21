@@ -168,6 +168,17 @@ public class CollectionImagesFragment extends qA implements View.OnClickListener
     }
 
     @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (binding != null) {
+            binding.imageList.setAdapter(null);
+        }
+        binding = null;
+        btnImport = null;
+        layoutBtnImport = null;
+    }
+
+    @Override
     public void onSaveInstanceState(Bundle outState) {
         outState.putString("sc_id", sc_id);
         super.onSaveInstanceState(outState);

@@ -42,6 +42,15 @@ public class BetaChangesFragment extends Fragment {
     }
 
     @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (binding != null) {
+            binding.list.setAdapter(null);
+        }
+        binding = null;
+    }
+
+    @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 

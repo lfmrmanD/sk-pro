@@ -72,6 +72,18 @@ public class br extends qA implements View.OnClickListener {
     }
 
     @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (binding != null) {
+            binding.componentList.setAdapter(null);
+        }
+        if (adapter != null) {
+            adapter.eventViewHolders.clear();
+        }
+        binding = null;
+    }
+
+    @Override
     public void onSaveInstanceState(@NonNull Bundle outState) {
         outState.putString("sc_id", sc_id);
         super.onSaveInstanceState(outState);
