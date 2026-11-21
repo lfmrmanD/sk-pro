@@ -5,10 +5,12 @@ import static dev.aldi.sayuti.editor.manage.LocalLibrariesUtil.deleteSelectedLoc
 import static dev.aldi.sayuti.editor.manage.LocalLibrariesUtil.getAllLocalLibraries;
 import static dev.aldi.sayuti.editor.manage.LocalLibrariesUtil.getLocalLibFile;
 import static dev.aldi.sayuti.editor.manage.LocalLibrariesUtil.getLocalLibraries;
+import static dev.aldi.sayuti.editor.manage.LocalLibrariesUtil.invalidateListCache;
 import static dev.aldi.sayuti.editor.manage.LocalLibrariesUtil.rewriteLocalLibFile;
 
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
@@ -21,6 +23,8 @@ import androidx.annotation.Nullable;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.recyclerview.widget.DiffUtil;
+import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.besome.sketch.lib.base.BaseAppCompatActivity;
@@ -31,9 +35,12 @@ import com.google.gson.Gson;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import a.a.a.MA;
@@ -46,15 +53,47 @@ import pro.sketchware.databinding.ViewItemLocalLibSearchBinding;
 import pro.sketchware.utility.AnalyticsHelper;
 import pro.sketchware.utility.SketchwareUtil;
 
+/**
+ * Activity for managing local libraries attached to a project (or globally
+ * when {@code sc_id} equals {@code "system"}).
+ *
+ * <h3>Performance overview</h3>
+ * <ul>
+ *   <li>Project-used libraries are indexed into a {@link HashSet} once per
+ *       load, so per-item "is this used?" checks are O(1) instead of O(m)
+ *       on every bind and every sort comparison.</li>
+ *   <li>Library sizes are loaded lazily on a background thread pool via
+ *       {@link LocalLibrariesUtil#computeSizesAsync}; the list itself appears
+ *       almost instantly and sizes trickle in.</li>
+ *   <li>Both adapters extend {@link ListAdapter} with {@link DiffUtil} so
+ *       list mutations only rebind the items that actually changed.</li>
+ *   <li>The 500 ms artificial delay in the previous load path is gone.</li>
+ * </ul>
+ */
 public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
+    private static final Gson GSON = new Gson();
+    private static final String SIZE_PLACEHOLDER = "…";
+
     private final LibraryAdapter adapter = new LibraryAdapter();
     private final SearchAdapter searchAdapter = new SearchAdapter();
+
+    /** Single background thread for disk I/O (list + project file). */
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
     private ArrayList<HashMap<String, Object>> projectUsedLibs;
     private boolean notAssociatedWithProject;
     private boolean searchBarExpanded;
     private BuildSettings buildSettings;
     private ManageLocallibrariesBinding binding;
     private String scId;
+
+    /**
+     * Pre-built index of project-used libraries so per-item checks are O(1).
+     * Rebuilt whenever {@link #projectUsedLibs} changes.
+     */
+    private final Set<String> usedLibraryNames = new HashSet<>();
+    private final Map<String, String> libraryDependencies = new HashMap<>();
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -63,76 +102,7 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
         binding = ManageLocallibrariesBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        {
-            View view1 = binding.searchBar;
-            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) view1.getLayoutParams();
-
-            int end = lp.getMarginEnd();
-            int start = lp.getMarginStart();
-
-            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
-                Insets insets = i.getInsets(WindowInsetsCompat.Type.displayCutout());
-                lp.setMarginEnd(end + insets.right);
-                lp.setMarginStart(start + insets.left);
-                v.setLayoutParams(lp);
-                return i;
-            });
-        }
-
-        {
-            View view1 = binding.contextualToolbarContainer;
-            int left = view1.getPaddingLeft();
-            int top = view1.getPaddingTop();
-            int right = view1.getPaddingRight();
-            int bottom = view1.getPaddingBottom();
-
-            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
-                Insets insets = i.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
-                v.setPadding(left + insets.left, top + insets.top, right + insets.right, bottom);
-                return i;
-            });
-        }
-
-        {
-            View view1 = binding.librariesList;
-            int left = view1.getPaddingLeft();
-            int top = view1.getPaddingTop();
-            int right = view1.getPaddingRight();
-            int bottom = view1.getPaddingBottom();
-
-            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
-                Insets insets = i.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
-                v.setPadding(left + insets.left, top, right + insets.right, bottom + insets.bottom);
-                return i;
-            });
-        }
-
-        {
-            View view1 = binding.searchList;
-            int left = view1.getPaddingLeft();
-            int top = view1.getPaddingTop();
-            int right = view1.getPaddingRight();
-            int bottom = view1.getPaddingBottom();
-
-            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
-                Insets insets = i.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
-                v.setPadding(left + insets.left, top, right + insets.right, bottom + insets.bottom);
-                return i;
-            });
-        }
-
-        {
-            View view1 = binding.downloadLibraryButton;
-            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) view1.getLayoutParams();
-            int bottom = lp.bottomMargin;
-
-            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
-                Insets insets = i.getInsets(WindowInsetsCompat.Type.systemBars());
-                lp.bottomMargin = bottom + insets.bottom;
-                v.setLayoutParams(lp);
-                return i;
-            });
-        }
+        applyWindowInsets();
 
         if (getIntent().hasExtra("sc_id")) {
             scId = Objects.requireNonNull(getIntent().getStringExtra("sc_id"));
@@ -169,18 +139,21 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
                 return true;
             } else if (id == R.id.action_delete_selected_local_libraries) {
                 k();
-                Executors.newSingleThreadExecutor().execute(() -> {
-                    deleteSelectedLocalLibraries(scId, adapter.getLocalLibraries(), projectUsedLibs);
-                    runOnUiThread(() -> {
+                ioExecutor.execute(() -> {
+                    deleteSelectedLocalLibraries(
+                            scId,
+                            adapter.getCurrentList(),
+                            projectUsedLibs);
+                    invalidateListCache();
+                    mainHandler.post(() -> {
                         if (isFinishing() || isDestroyed()) return;
                         h();
                         SketchwareUtil.toast("Deleted successfully");
                         adapter.isSelectionModeEnabled = false;
-                        adapter.notifyDataSetChanged();
                         collapseContextualToolbar();
+                        runLoadLocalLibrariesTask();
                     });
                 });
-
                 return true;
             }
             return false;
@@ -210,7 +183,7 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
             @Override
             public void afterTextChanged(Editable s) {
                 String value = s.toString().trim();
-                searchAdapter.filter(getAdapterLocalLibraries(), value);
+                searchAdapter.filter(adapter.getCurrentList(), value);
                 if (value.length() > 2) {
                     AnalyticsHelper.logFeatureSearch(ManageLocalLibraryActivity.this, value, "local_libraries");
                 }
@@ -237,13 +210,87 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
         });
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        ioExecutor.shutdownNow();
+    }
+
+    /** Applies edge-to-edge window insets to the search bar, contextual toolbar, lists, FAB. */
+    private void applyWindowInsets() {
+        {
+            View view1 = binding.searchBar;
+            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) view1.getLayoutParams();
+            int end = lp.getMarginEnd();
+            int start = lp.getMarginStart();
+            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
+                Insets insets = i.getInsets(WindowInsetsCompat.Type.displayCutout());
+                lp.setMarginEnd(end + insets.right);
+                lp.setMarginStart(start + insets.left);
+                v.setLayoutParams(lp);
+                return i;
+            });
+        }
+        {
+            View view1 = binding.contextualToolbarContainer;
+            int left = view1.getPaddingLeft();
+            int top = view1.getPaddingTop();
+            int right = view1.getPaddingRight();
+            int bottom = view1.getPaddingBottom();
+            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
+                Insets insets = i.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+                v.setPadding(left + insets.left, top + insets.top, right + insets.right, bottom);
+                return i;
+            });
+        }
+        {
+            View view1 = binding.librariesList;
+            int left = view1.getPaddingLeft();
+            int top = view1.getPaddingTop();
+            int right = view1.getPaddingRight();
+            int bottom = view1.getPaddingBottom();
+            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
+                Insets insets = i.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+                v.setPadding(left + insets.left, top, right + insets.right, bottom + insets.bottom);
+                return i;
+            });
+        }
+        {
+            View view1 = binding.searchList;
+            int left = view1.getPaddingLeft();
+            int top = view1.getPaddingTop();
+            int right = view1.getPaddingRight();
+            int bottom = view1.getPaddingBottom();
+            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
+                Insets insets = i.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+                v.setPadding(left + insets.left, top, right + insets.right, bottom + insets.bottom);
+                return i;
+            });
+        }
+        {
+            View view1 = binding.downloadLibraryButton;
+            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) view1.getLayoutParams();
+            int bottom = lp.bottomMargin;
+            ViewCompat.setOnApplyWindowInsetsListener(view1, (v, i) -> {
+                Insets insets = i.getInsets(WindowInsetsCompat.Type.systemBars());
+                lp.bottomMargin = bottom + insets.bottom;
+                v.setLayoutParams(lp);
+                return i;
+            });
+        }
+    }
+
+    /**
+     * Loads the library list off the UI thread. The 500 ms artificial delay
+     * from the previous implementation has been removed.
+     */
     private void runLoadLocalLibrariesTask() {
         k();
-        new Handler().postDelayed(() -> new LoadLocalLibrariesTask(this).execute(), 500L);
+        new LoadLocalLibrariesTask(this).execute();
     }
 
     private List<LocalLibrary> getAdapterLocalLibraries() {
-        return adapter.getLocalLibraries();
+        return adapter.getCurrentList();
     }
 
     private void hideContextualToolbarAndClearSelection() {
@@ -257,7 +304,8 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
         for (LocalLibrary library : getAdapterLocalLibraries()) {
             library.setSelected(selected);
         }
-        adapter.notifyDataSetChanged();
+        // Force a fresh list reference so DiffUtil picks up selection changes.
+        adapter.submitList(new ArrayList<>(getAdapterLocalLibraries()));
     }
 
     private void expandContextualToolbar() {
@@ -280,42 +328,90 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
         return count;
     }
 
-    // This method is running from the background thread.
-    // So, every UI operation must be called inside `runOnUiThread`.
-    private void loadLibraries() {
-        var localLibraries = getAllLocalLibraries();
-        if (!notAssociatedWithProject) {
-            projectUsedLibs = getLocalLibraries(scId);
-        }
-
-        //This code helps in sorting the list of local libraries to display enabled libraries first.
-        localLibraries.sort((lib1, lib2) -> {
-            boolean isEnabled1 = isUsedLibrary(lib1.getName());
-            boolean isEnabled2 = isUsedLibrary(lib2.getName());
-            return Boolean.compare(isEnabled2, isEnabled1);
-        });
-
-        runOnUiThread(() -> {
-            if (isFinishing() || isDestroyed()) return;
-            adapter.setLocalLibraries(localLibraries);
-            binding.noContentLayout.setVisibility(localLibraries.isEmpty() ? View.VISIBLE : View.GONE);
-        });
-    }
-
-    private boolean isUsedLibrary(String libraryName) {
-        if (!notAssociatedWithProject) {
-            for (Map<String, Object> libraryMap : projectUsedLibs) {
-                if (libraryName.equals(libraryMap.get("name").toString())) {
-                    return true;
-                }
+    /**
+     * Rebuilds the {@link #usedLibraryNames} / {@link #libraryDependencies}
+     * lookup tables from {@link #projectUsedLibs}. Cheap (O(m)) and runs
+     * on the background thread alongside the load, plus on the UI thread
+     * after each toggle.
+     */
+    private void rebuildUsedLibraryIndex() {
+        usedLibraryNames.clear();
+        libraryDependencies.clear();
+        if (projectUsedLibs == null) return;
+        for (Map<String, Object> lib : projectUsedLibs) {
+            String name = String.valueOf(lib.get("name"));
+            usedLibraryNames.add(name);
+            Object dep = lib.get("dependency");
+            if (dep instanceof String) {
+                libraryDependencies.put(name, (String) dep);
             }
         }
-        return false;
+    }
+
+    /** O(1) check used during sort and bind. */
+    private boolean isUsedLibrary(String libraryName) {
+        return usedLibraryNames.contains(libraryName);
+    }
+
+    /**
+     * Adds or removes a library from {@link #projectUsedLibs} based on the
+     * switch state, then rewrites the project file. After mutation the
+     * lookup index is refreshed so subsequent renders are correct.
+     *
+     * <p>Shared between {@link LibraryAdapter} and {@link SearchAdapter}
+     * so there is no duplicated logic.
+     */
+    private void onLibrarySwitchToggled(String name, boolean nowEnabled) {
+        if (projectUsedLibs == null) return;
+
+        if (!nowEnabled) {
+            projectUsedLibs.removeIf(lib -> name.equals(String.valueOf(lib.get("name"))));
+        } else {
+            String dependency = libraryDependencies.get(name);
+            projectUsedLibs.add(createLibraryMap(name, dependency));
+            AnalyticsHelper.logAddLibrary(this, name, "local_library");
+        }
+        rewriteLocalLibFile(scId, GSON.toJson(projectUsedLibs));
+        rebuildUsedLibraryIndex();
+    }
+
+    // This method runs on the background thread; every UI operation is
+    // dispatched back through `mainHandler`.
+    private void loadLibraries() {
+        List<LocalLibrary> localLibraries = getAllLocalLibraries();
+        if (!notAssociatedWithProject) {
+            projectUsedLibs = getLocalLibraries(scId);
+            rebuildUsedLibraryIndex();
+        }
+
+        // Sort: enabled (used) libraries first. With the HashSet index this
+        // is O(n log n) instead of O(n × m × log n).
+        localLibraries.sort((lib1, lib2) ->
+                Boolean.compare(isUsedLibrary(lib2.getName()), isUsedLibrary(lib1.getName())));
+
+        mainHandler.post(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            adapter.submitList(localLibraries);
+            binding.noContentLayout.setVisibility(
+                    localLibraries.isEmpty() ? View.VISIBLE : View.GONE);
+        });
+
+        // Now fill in sizes on the background pool. Submitting a fresh list
+        // reference triggers DiffUtil to rebind only the items whose size
+        // string actually changed.
+        LocalLibrariesUtil.computeSizesAsync(localLibraries, () ->
+                mainHandler.post(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    adapter.submitList(new ArrayList<>(localLibraries));
+                }));
     }
 
     public interface OnLocalLibrarySelectedStateChangedListener {
         void invoke(LocalLibrary library);
     }
+
+    // ---- Background task wrapper (kept for compatibility with the existing
+    //      task-tracking infrastructure in `MA`). Internal work is thin. ----
 
     private static class LoadLocalLibrariesTask extends MA {
         private final WeakReference<ManageLocalLibraryActivity> activity;
@@ -328,42 +424,68 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
 
         @Override
         public void a() {
-            activity.get().h();
+            ManageLocalLibraryActivity a = activity.get();
+            if (a != null) a.h();
         }
 
         @Override
         public void a(String idk) {
-            activity.get().h();
+            ManageLocalLibraryActivity a = activity.get();
+            if (a != null) a.h();
         }
 
         @Override
         public void b() {
             try {
-                activity.get().loadLibraries();
+                ManageLocalLibraryActivity a = activity.get();
+                if (a != null) a.loadLibraries();
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
     }
 
-    public class LibraryAdapter extends RecyclerView.Adapter<LibraryAdapter.ViewHolder> {
-        private final List<LocalLibrary> localLibraries = new ArrayList<>();
+    // ======================= LibraryAdapter =======================
+
+    public class LibraryAdapter extends ListAdapter<LocalLibrary, LibraryAdapter.ViewHolder> {
         public boolean isSelectionModeEnabled;
         private @Nullable OnLocalLibrarySelectedStateChangedListener onLocalLibrarySelectedStateChangedListener;
+
+        public LibraryAdapter() {
+            super(new DiffUtil.ItemCallback<LocalLibrary>() {
+                @Override
+                public boolean areItemsTheSame(@NonNull LocalLibrary a, @NonNull LocalLibrary b) {
+                    return a.getName().equals(b.getName());
+                }
+
+                @Override
+                public boolean areContentsTheSame(@NonNull LocalLibrary a, @NonNull LocalLibrary b) {
+                    return a.isSelected() == b.isSelected()
+                            && Objects.equals(a.getSize(), b.getSize());
+                }
+            });
+        }
+
+        public void setOnLocalLibrarySelectedStateChangedListener(
+                @Nullable OnLocalLibrarySelectedStateChangedListener listener) {
+            this.onLocalLibrarySelectedStateChangedListener = listener;
+        }
 
         @NonNull
         @Override
         public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            return new ViewHolder(ViewItemLocalLibBinding.inflate(LayoutInflater.from(parent.getContext()), parent, false));
+            return new ViewHolder(ViewItemLocalLibBinding.inflate(
+                    LayoutInflater.from(parent.getContext()), parent, false));
         }
 
         @Override
-        public void onBindViewHolder(ViewHolder holder, int position) {
-            var binding = holder.binding;
-            var library = localLibraries.get(position);
+        public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+            ViewItemLocalLibBinding binding = holder.binding;
+            LocalLibrary library = getItem(position);
 
             binding.libraryName.setText(library.getName());
-            binding.librarySize.setText(library.getSize());
+            String size = library.getSize();
+            binding.librarySize.setText(size == null || size.isEmpty() ? SIZE_PLACEHOLDER : size);
             binding.libraryName.setSelected(true);
             bindSelectedState(binding.card, library);
 
@@ -379,51 +501,36 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
                 if (isSelectionModeEnabled) {
                     return false;
                 }
-
                 isSelectionModeEnabled = true;
                 toggleLocalLibrary(binding.card, library, onLocalLibrarySelectedStateChangedListener);
                 return true;
             });
 
-            binding.materialSwitch.setChecked(false);
+            // O(1) HashSet lookup instead of looping projectUsedLibs every bind.
+            binding.materialSwitch.setChecked(usedLibraryNames.contains(library.getName()));
             if (!notAssociatedWithProject) {
-
-                binding.materialSwitch.setOnClickListener(v -> onItemClicked(binding, library.getName()));
-
-                for (Map<String, Object> libraryMap : projectUsedLibs) {
-                    if (library.getName().equals(libraryMap.get("name").toString())) {
-                        binding.materialSwitch.setChecked(true);
-                    }
-                }
+                binding.materialSwitch.setOnClickListener(v ->
+                        onLibrarySwitchToggled(library.getName(), binding.materialSwitch.isChecked()));
             } else {
                 binding.materialSwitch.setEnabled(false);
             }
         }
 
-        @Override
-        public int getItemCount() {
-            return localLibraries.isEmpty() ? 0 : localLibraries.size();
-        }
-
-        public void setOnLocalLibrarySelectedStateChangedListener(
-                @Nullable OnLocalLibrarySelectedStateChangedListener onLocalLibrarySelectedStateChangedListener) {
-            this.onLocalLibrarySelectedStateChangedListener = onLocalLibrarySelectedStateChangedListener;
-        }
-
         private void toggleLocalLibrary(MaterialCardView card, LocalLibrary library,
-                                        @Nullable OnLocalLibrarySelectedStateChangedListener onLocalLibrarySelectedStateChangedListener) {
+                                        @Nullable OnLocalLibrarySelectedStateChangedListener listener) {
             library.setSelected(!library.isSelected());
             bindSelectedState(card, library);
-            if (onLocalLibrarySelectedStateChangedListener != null) {
-                onLocalLibrarySelectedStateChangedListener.invoke(library);
+            if (listener != null) {
+                listener.invoke(library);
             }
             if (library.isSelected() && isUsedLibrary(library.getName())) {
                 new MaterialAlertDialogBuilder(ManageLocalLibraryActivity.this)
                         .setTitle(R.string.common_word_warning)
-                        .setMessage("This library \"" + library.getName() + "\" already used in your project, removing it may break your project\rDo you want to continue removing it?")
+                        .setMessage("This library \"" + library.getName()
+                                + "\" already used in your project, removing it may break your project\rDo you want to continue removing it?")
                         .setPositiveButton(R.string.common_word_yes, (dialog, which) -> dialog.dismiss())
                         .setNegativeButton(R.string.common_word_cancel, (dialog, which) -> {
-                            toggleLocalLibrary(card, library, onLocalLibrarySelectedStateChangedListener);
+                            toggleLocalLibrary(card, library, listener);
                             dialog.dismiss();
                         })
                         .show();
@@ -432,48 +539,6 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
 
         private void bindSelectedState(MaterialCardView card, LocalLibrary library) {
             card.setChecked(library.isSelected());
-        }
-
-        private void onItemClicked(ViewItemLocalLibBinding binding, String name) {
-            HashMap<String, Object> localLibrary;
-            if (!binding.materialSwitch.isChecked()) {
-                // Remove the library from the list
-                int indexToRemove = -1;
-                for (int i = 0; i < projectUsedLibs.size(); i++) {
-                    Map<String, Object> libraryMap = projectUsedLibs.get(i);
-                    if (name.equals(libraryMap.get("name").toString())) {
-                        indexToRemove = i;
-                        break;
-                    }
-                }
-                if (indexToRemove != -1) {
-                    projectUsedLibs.remove(indexToRemove);
-                }
-            } else {
-                // Add the library to the list
-                // Here, we need to find the dependency string if it exists
-                String dependency = null;
-                for (Map<String, Object> libraryMap : projectUsedLibs) {
-                    if (name.equals(libraryMap.get("name").toString())) {
-                        dependency = (String) libraryMap.get("dependency");
-                        break;
-                    }
-                }
-                localLibrary = createLibraryMap(name, dependency);
-                projectUsedLibs.add(localLibrary);
-                AnalyticsHelper.logAddLibrary(ManageLocalLibraryActivity.this, name, "local_library");
-            }
-            rewriteLocalLibFile(scId, new Gson().toJson(projectUsedLibs));
-        }
-
-        public List<LocalLibrary> getLocalLibraries() {
-            return localLibraries;
-        }
-
-        public void setLocalLibraries(List<LocalLibrary> localLibraries) {
-            this.localLibraries.clear();
-            this.localLibraries.addAll(localLibraries);
-            notifyDataSetChanged();
         }
 
         public static class ViewHolder extends RecyclerView.ViewHolder {
@@ -486,101 +551,81 @@ public class ManageLocalLibraryActivity extends BaseAppCompatActivity {
         }
     }
 
-    public class SearchAdapter extends RecyclerView.Adapter<SearchAdapter.ViewHolder> {
-        private final List<LocalLibrary> filteredLocalLibraries = new ArrayList<>();
+    // ======================= SearchAdapter =======================
+    //
+    // Mirrors the main adapter's data (same LocalLibrary instances) filtered
+    // by the current query. Same O(1) used-library lookup is used here so
+    // searching and scrolling search results is as cheap as the main list.
+
+    public class SearchAdapter extends ListAdapter<LocalLibrary, SearchAdapter.ViewHolder> {
+
+        public SearchAdapter() {
+            super(new DiffUtil.ItemCallback<LocalLibrary>() {
+                @Override
+                public boolean areItemsTheSame(@NonNull LocalLibrary a, @NonNull LocalLibrary b) {
+                    return a.getName().equals(b.getName());
+                }
+
+                @Override
+                public boolean areContentsTheSame(@NonNull LocalLibrary a, @NonNull LocalLibrary b) {
+                    return a.isSelected() == b.isSelected()
+                            && Objects.equals(a.getSize(), b.getSize());
+                }
+            });
+        }
 
         @NonNull
         @Override
         public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            var binding = ViewItemLocalLibSearchBinding.inflate(LayoutInflater.from(parent.getContext()), parent, false);
-            return new ViewHolder(binding);
+            return new ViewHolder(ViewItemLocalLibSearchBinding.inflate(
+                    LayoutInflater.from(parent.getContext()), parent, false));
         }
 
         @Override
-        public void onBindViewHolder(ViewHolder holder, int position) {
-            var binding = holder.binding;
-            var library = filteredLocalLibraries.get(position);
+        public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+            ViewItemLocalLibSearchBinding binding = holder.binding;
+            LocalLibrary library = getItem(position);
 
             binding.libraryName.setText(library.getName());
-            binding.librarySize.setText(library.getSize());
+            String size = library.getSize();
+            binding.librarySize.setText(size == null || size.isEmpty() ? SIZE_PLACEHOLDER : size);
             binding.libraryName.setSelected(true);
 
-            binding.materialSwitch.setChecked(false);
+            // O(1) HashSet lookup instead of looping projectUsedLibs every bind.
+            binding.materialSwitch.setChecked(usedLibraryNames.contains(library.getName()));
             if (!notAssociatedWithProject) {
-
                 binding.getRoot().setOnClickListener(v -> binding.materialSwitch.performClick());
-
                 binding.materialSwitch.setOnClickListener(v -> {
-                    onItemClicked(binding, library.getName());
-                    adapter.notifyItemChanged(position);
+                    onLibrarySwitchToggled(library.getName(), binding.materialSwitch.isChecked());
+                    // Refresh the visible item so the switch reflects the new state.
+                    notifyItemChanged(holder.getBindingAdapterPosition());
                 });
-
-                for (Map<String, Object> libraryMap : projectUsedLibs) {
-                    if (library.getName().equals(libraryMap.get("name").toString())) {
-                        binding.materialSwitch.setChecked(true);
-                    }
-                }
             } else {
                 binding.materialSwitch.setEnabled(false);
             }
         }
 
-        @Override
-        public int getItemCount() {
-            return filteredLocalLibraries.isEmpty() ? 0 : filteredLocalLibraries.size();
-        }
-
-        private void onItemClicked(ViewItemLocalLibSearchBinding binding, String name) {
-            HashMap<String, Object> localLibrary;
-            if (!binding.materialSwitch.isChecked()) {
-                // Remove the library from the list
-                int indexToRemove = -1;
-                for (int i = 0; i < projectUsedLibs.size(); i++) {
-                    Map<String, Object> libraryMap = projectUsedLibs.get(i);
-                    if (name.equals(libraryMap.get("name").toString())) {
-                        indexToRemove = i;
-                        break;
-                    }
-                }
-                if (indexToRemove != -1) {
-                    projectUsedLibs.remove(indexToRemove);
-                }
-            } else {
-                // Add the library to the list
-                // Here, we need to find the dependency string if it exists
-                String dependency = null;
-                for (Map<String, Object> libraryMap : projectUsedLibs) {
-                    if (name.equals(libraryMap.get("name").toString())) {
-                        dependency = (String) libraryMap.get("dependency");
-                        break;
-                    }
-                }
-                localLibrary = createLibraryMap(name, dependency);
-                projectUsedLibs.add(localLibrary);
-                AnalyticsHelper.logAddLibrary(ManageLocalLibraryActivity.this, name, "local_library");
-            }
-            rewriteLocalLibFile(scId, new Gson().toJson(projectUsedLibs));
-        }
-
+        /**
+         * Builds a filtered, sorted list from the main adapter's current
+         * data and submits it via {@link ListAdapter#submitList(List)} so
+         * DiffUtil handles incremental updates instead of a full rebind.
+         */
         public void filter(List<LocalLibrary> localLibraries, String query) {
-            filteredLocalLibraries.clear();
+            List<LocalLibrary> filtered = new ArrayList<>();
             if (query.isEmpty()) {
-                filteredLocalLibraries.addAll(localLibraries);
+                filtered.addAll(localLibraries);
             } else {
+                String lowerQuery = query.toLowerCase();
                 for (LocalLibrary library : localLibraries) {
-                    if (library.getName().toLowerCase().contains(query.toLowerCase())) {
-                        filteredLocalLibraries.add(library);
+                    if (library.getName().toLowerCase().contains(lowerQuery)) {
+                        filtered.add(library);
                     }
                 }
             }
-            // Sorts the filtered search results to ensure enabled libraries still appear at the top.
-            filteredLocalLibraries.sort((lib1, lib2) -> {
-                boolean isEnabled1 = isUsedLibrary(lib1.getName());
-                boolean isEnabled2 = isUsedLibrary(lib2.getName());
-                return Boolean.compare(isEnabled2, isEnabled1);
-            });
-
-            notifyDataSetChanged();
+            // Keep enabled libraries on top, same as the main list.
+            filtered.sort((lib1, lib2) ->
+                    Boolean.compare(isUsedLibrary(lib2.getName()), isUsedLibrary(lib1.getName())));
+            submitList(filtered);
         }
 
         public static class ViewHolder extends RecyclerView.ViewHolder {
