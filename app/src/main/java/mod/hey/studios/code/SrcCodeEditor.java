@@ -85,7 +85,10 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
      * {@link #KNOWN_COLOR_SCHEMES} only recolor the editor chrome, leaving
      * TextMate token text invisible on a mismatched background.
      */
-    public static final List<String> KNOWN_TEXTMATE_THEMES = List.of("Dracula", "GitHub");
+    public static final List<String> KNOWN_TEXTMATE_THEMES = List.of(
+            "Dracula", "GitHub", "Default", "Eclipse", "Xcode",
+            "Solarized Light", "Monokai", "One Dark"
+    );
     public static SharedPreferences pref;
     public static int languageId;
     private String beforeContent = "";

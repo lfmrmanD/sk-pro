@@ -16,7 +16,23 @@ import pro.sketchware.SketchApplication;
 public class CodeEditorColorSchemes {
     public static final String THEME_DRACULA = "dracula.json";
     public static final String THEME_GITHUB = "GitHub.tmTheme";
-    public static final String[] THEMES = {THEME_DRACULA, THEME_GITHUB};
+    public static final String THEME_DEFAULT = "Default.json";
+    public static final String THEME_ECLIPSE = "Eclipse.json";
+    public static final String THEME_XCODE = "Xcode.json";
+    public static final String THEME_SOLARIZED_LIGHT = "SolarizedLight.json";
+    public static final String THEME_MONOKAI = "Monokai.json";
+    public static final String THEME_ONE_DARK = "OneDark.json";
+
+    /**
+     * All loadable TextMate themes. Index 0/1 are Dracula/GitHub so the
+     * dark/light auto-default keeps working; the display names live in
+     * {@code mod.hey.studios.code.SrcCodeEditor#KNOWN_TEXTMATE_THEMES} and
+     * mirror this order.
+     */
+    public static final String[] THEMES = {
+            THEME_DRACULA, THEME_GITHUB, THEME_DEFAULT, THEME_ECLIPSE,
+            THEME_XCODE, THEME_SOLARIZED_LIGHT, THEME_MONOKAI, THEME_ONE_DARK
+    };
     private static final String TAG = "CodeEditorColorSchemes";
 
     static {
