@@ -14,9 +14,9 @@ import mod.jbk.util.LogUtil;
 import pro.sketchware.SketchApplication;
 
 public class CodeEditorColorSchemes {
+    public static final String THEME_DEFAULT = "Default.json";
     public static final String THEME_DRACULA = "dracula.json";
     public static final String THEME_GITHUB = "GitHub.tmTheme";
-    public static final String THEME_DEFAULT = "Default.json";
     public static final String THEME_ECLIPSE = "Eclipse.json";
     public static final String THEME_XCODE = "Xcode.json";
     public static final String THEME_SOLARIZED_LIGHT = "SolarizedLight.json";
@@ -24,13 +24,13 @@ public class CodeEditorColorSchemes {
     public static final String THEME_ONE_DARK = "OneDark.json";
 
     /**
-     * All loadable TextMate themes. Index 0/1 are Dracula/GitHub so the
-     * dark/light auto-default keeps working; the display names live in
-     * {@code mod.hey.studios.code.SrcCodeEditor#KNOWN_TEXTMATE_THEMES} and
-     * mirror this order.
+     * All loadable TextMate themes. The display names live in
+     * {@code mod.hey.studios.code.SrcCodeEditor#KNOWN_TEXTMATE_THEMES} and must
+     * mirror this order. Reordering is safe: the dark/light auto-defaults
+     * resolve themes by name via {@link #themeIndex(String)}.
      */
     public static final String[] THEMES = {
-            THEME_DRACULA, THEME_GITHUB, THEME_DEFAULT, THEME_ECLIPSE,
+            THEME_DEFAULT, THEME_DRACULA, THEME_GITHUB, THEME_ECLIPSE,
             THEME_XCODE, THEME_SOLARIZED_LIGHT, THEME_MONOKAI, THEME_ONE_DARK
     };
     private static final String TAG = "CodeEditorColorSchemes";
@@ -65,5 +65,18 @@ public class CodeEditorColorSchemes {
         }
 
         return scheme;
+    }
+
+    /**
+     * Position of a theme in {@link #THEMES}, or 0 if unknown. Use this instead
+     * of hard-coded indexes so the code keeps working if the list is reordered.
+     */
+    public static int themeIndex(String theme) {
+        for (int i = 0; i < THEMES.length; i++) {
+            if (THEMES[i].equals(theme)) {
+                return i;
+            }
+        }
+        return 0;
     }
 }

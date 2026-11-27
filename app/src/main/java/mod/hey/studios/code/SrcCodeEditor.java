@@ -72,9 +72,9 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     public static final String FLAG_FROM_ANDROID_MANIFEST = "from_android_manifest";
     public static final List<Pair<String, Class<? extends EditorColorScheme>>> KNOWN_COLOR_SCHEMES = List.of(
             new Pair<>("Default", EditorColorScheme.class),
+            new Pair<>("Darcula", SchemeDarcula.class),
             new Pair<>("GitHub", SchemeGitHub.class),
             new Pair<>("Eclipse", SchemeEclipse.class),
-            new Pair<>("Darcula", SchemeDarcula.class),
             new Pair<>("VS2019", SchemeVS2019.class),
             new Pair<>("NotepadXX", SchemeNotepadXX.class)
     );
@@ -86,7 +86,7 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
      * TextMate token text invisible on a mismatched background.
      */
     public static final List<String> KNOWN_TEXTMATE_THEMES = List.of(
-            "Dracula", "GitHub", "Default", "Eclipse", "Xcode",
+            "Default", "Darcula", "GitHub", "Eclipse", "Xcode",
             "Solarized Light", "Monokai", "One Dark"
     );
     public static SharedPreferences pref;
@@ -146,11 +146,14 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     }
 
     /**
-     * Default TextMate theme index for a freshly opened file: Dracula in dark
-     * mode, GitHub in light mode.
+     * Default TextMate theme index for a freshly opened file: Darcula in dark
+     * mode, GitHub in light mode. Referenced by name so reordering the theme
+     * list cannot break it.
      */
     public static int defaultTextMateTheme(Context c) {
-        return ThemeUtils.isDarkThemeEnabled(c) ? 0 : 1;
+        return ThemeUtils.isDarkThemeEnabled(c)
+                ? CodeEditorColorSchemes.themeIndex(CodeEditorColorSchemes.THEME_DRACULA)
+                : CodeEditorColorSchemes.themeIndex(CodeEditorColorSchemes.THEME_GITHUB);
     }
 
     public static void selectLanguage(CodeEditor ed, int which) {
@@ -380,7 +383,8 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
         SharedPreferences hsce = getSharedPreferences("hsce", Activity.MODE_PRIVATE);
         loadCESettings(this, binding.editor, "act");
         if (textMateLanguage) {
-            int tmDefault = languageId == 2 ? defaultTextMateTheme(getApplicationContext()) : 0;
+            int tmDefault = languageId == 2 ? defaultTextMateTheme(getApplicationContext())
+                    : CodeEditorColorSchemes.themeIndex(CodeEditorColorSchemes.THEME_DRACULA);
             int tmTheme = hsce.contains("act_tmtheme") ? hsce.getInt("act_tmtheme", 0) : tmDefault;
             selectTextMateTheme(binding.editor, tmTheme);
         } else {
@@ -535,7 +539,8 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
                             if (which == 0) {
                                 selectTheme(binding.editor, pref.getInt("act_theme", 3));
                             } else {
-                                int tmDefault = which == 2 ? defaultTextMateTheme(getApplicationContext()) : 0;
+                                int tmDefault = which == 2 ? defaultTextMateTheme(getApplicationContext())
+                                        : CodeEditorColorSchemes.themeIndex(CodeEditorColorSchemes.THEME_DRACULA);
                                 int tmTheme = pref.contains("act_tmtheme") ? pref.getInt("act_tmtheme", 0) : tmDefault;
                                 selectTextMateTheme(binding.editor, tmTheme);
                             }
