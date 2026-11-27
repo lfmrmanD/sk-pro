@@ -80,10 +80,7 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     );
     /**
      * Display names of the available TextMate themes, in the same order as
-     * {@link mod.jbk.code.CodeEditorColorSchemes#THEMES}. These are the only
-     * themes that can color TextMate languages (Kotlin, XML); the built-in
-     * {@link #KNOWN_COLOR_SCHEMES} only recolor the editor chrome, leaving
-     * TextMate token text invisible on a mismatched background.
+     * {@link mod.jbk.code.CodeEditorColorSchemes#THEMES}.
      */
     public static final List<String> KNOWN_TEXTMATE_THEMES = List.of(
             "Default", "Darcula", "GitHub", "Eclipse", "Xcode",
@@ -118,11 +115,7 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     }
 
     public static void selectTheme(CodeEditor ed, int which) {
-        // Built-in Sora color schemes only recolor the editor chrome
-        // (background, line numbers, cursor, ...). They are meant for regular
-        // Sora languages such as Java. Use {@link #selectTextMateTheme} for
-        // the TextMate languages (Kotlin, XML), whose token text is colored by
-        // a TextMate theme rather than by these schemes.
+        // Built-in schemes only recolor the editor chrome; use selectTextMateTheme for Kotlin/XML.
         EditorColorScheme scheme = switch (which) {
             case 1 -> new SchemeGitHub();
             case 2 -> new SchemeEclipse();
@@ -136,9 +129,7 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     }
 
     /**
-     * Applies one of the available TextMate themes (see {@link #KNOWN_TEXTMATE_THEMES}).
-     * This is what actually recolors the token text of the Kotlin / XML
-     * editors, unlike the built-in schemes.
+     * Applies one of the TextMate themes ({@link #KNOWN_TEXTMATE_THEMES}).
      */
     public static void selectTextMateTheme(CodeEditor ed, int which) {
         String theme = CodeEditorColorSchemes.THEMES[which];
@@ -146,9 +137,7 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
     }
 
     /**
-     * Default TextMate theme index for a freshly opened file: Darcula in dark
-     * mode, GitHub in light mode. Referenced by name so reordering the theme
-     * list cannot break it.
+     * Default TextMate theme: Darcula in dark mode, GitHub in light mode.
      */
     public static int defaultTextMateTheme(Context c) {
         return ThemeUtils.isDarkThemeEnabled(c)
@@ -373,13 +362,8 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
             textMateLanguage = true;
         }
 
-        // Load the non-theme editor settings, then apply the theme that matches
-        // the active language. Java uses the saved built-in scheme; the
-        // TextMate languages (Kotlin, XML) use a saved TextMate theme, falling
-        // back to an auto-picked default on first open so a light-mode app does
-        // not suddenly open with a dark editor. Files that are not one of
-        // these (e.g. the AndroidManifest "Components" view) keep the built-in
-        // scheme.
+        // Apply the theme matching the active language: a saved TextMate theme
+        // for Kotlin/XML (auto default on first open), else the built-in scheme.
         SharedPreferences hsce = getSharedPreferences("hsce", Activity.MODE_PRIVATE);
         loadCESettings(this, binding.editor, "act");
         if (textMateLanguage) {
@@ -532,10 +516,7 @@ public class SrcCodeEditor extends BaseAppCompatActivity {
                     case "Select language":
                         showSwitchLanguageDialog(this, binding.editor, (dialog, which) -> {
                             selectLanguage(binding.editor, which);
-                            // Keep the color scheme in sync with the new language:
-                            // TextMate languages need a TextMate theme, Java a
-                            // built-in scheme (otherwise the token text and the
-                            // background mismatch and become unreadable).
+                            // Re-sync the color scheme to match the new language.
                             if (which == 0) {
                                 selectTheme(binding.editor, pref.getInt("act_theme", 3));
                             } else {

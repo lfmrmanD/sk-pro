@@ -24,10 +24,7 @@ public class CodeEditorColorSchemes {
     public static final String THEME_ONE_DARK = "OneDark.json";
 
     /**
-     * All loadable TextMate themes. The display names live in
-     * {@code mod.hey.studios.code.SrcCodeEditor#KNOWN_TEXTMATE_THEMES} and must
-     * mirror this order. Reordering is safe: the dark/light auto-defaults
-     * resolve themes by name via {@link #themeIndex(String)}.
+     * All loadable TextMate themes; {@code SrcCodeEditor#KNOWN_TEXTMATE_THEMES} mirrors this order.
      */
     public static final String[] THEMES = {
             THEME_DEFAULT, THEME_DRACULA, THEME_GITHUB, THEME_ECLIPSE,
@@ -68,8 +65,7 @@ public class CodeEditorColorSchemes {
     }
 
     /**
-     * Position of a theme in {@link #THEMES}, or 0 if unknown. Use this instead
-     * of hard-coded indexes so the code keeps working if the list is reordered.
+     * Position of a theme in {@link #THEMES}, or 0 if unknown.
      */
     public static int themeIndex(String theme) {
         for (int i = 0; i < THEMES.length; i++) {
